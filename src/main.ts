@@ -51,16 +51,16 @@ export default class WebPPastePlugin extends Plugin {
 			+ String(now.getHours()).padStart(2, "0")
 			+ String(now.getMinutes()).padStart(2, "0")
 			+ String(now.getSeconds()).padStart(2, "0");
-		const baseName = `Pasted image ${timestamp}`;
-
 		const activeFile = view.file;
 		if (!activeFile) return;
+
+		const noteName = activeFile.basename;
+		const baseName = `${noteName} ${timestamp}`;
 
 		const path = await this.getAttachmentPath(baseName, "webp", activeFile);
 		const created = await this.app.vault.createBinary(path, arrayBuffer);
 
-		const linkText = this.app.fileManager.generateMarkdownLink(created, activeFile.path);
-		editor.replaceSelection(linkText);
+		editor.replaceSelection(`![[${created.name}]]`);
 	}
 
 	async getAttachmentPath(baseName: string, ext: string, activeFile: TFile): Promise<string> {

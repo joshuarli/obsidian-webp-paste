@@ -8,6 +8,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "^16.11.6",
+		"biome": "^0.3.3",
 		"obsidian": "latest",
 		"typescript": "4.7.4"
 	}

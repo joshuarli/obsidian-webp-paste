@@ -6,3 +6,6 @@ build:
 install: build
 	mkdir -p "{{vault_plugins}}"
 	cp main.js manifest.json "{{vault_plugins}}/"
+
+pc:
+	prek run --all-files
