@@ -1,7 +1,7 @@
 {
   "id": "webp-paste",
   "name": "Image Converter: WebP only",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.11.7",
   "description": "converts pasted images to webp",
   "author": "joshuarli",
