@@ -12,3 +12,11 @@ install: build
 
 pc:
 	prek run --all-files
+
+release version:
+	tmp=$(mktemp) && jq '.version = "{{version}}"' manifest.json > "$tmp" && mv "$tmp" manifest.json
+	tmp=$(mktemp) && jq '.version = "{{version}}"' package.json > "$tmp" && mv "$tmp" package.json
+	git add manifest.json package.json
+	git commit -m "{{version}}"
+	git tag -a "{{version}}" -m "{{version}}"
+	git push origin main "{{version}}"
