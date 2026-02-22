@@ -1,5 +1,8 @@
 vault_plugins := "/Users/josh/iCloud~md~obsidian/Documents/Notes/.obsidian/plugins/webp-paste"
 
+setup:
+    prek install --install-hooks
+
 build:
 	bun run build
 

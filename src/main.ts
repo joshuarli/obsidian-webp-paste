@@ -1,15 +1,48 @@
-import { Plugin, PluginSettingTab, Setting, Editor, MarkdownView, App, TFile } from "obsidian";
+import { type App, type Editor, type MarkdownView, type TFile, Plugin, PluginSettingTab, Setting } from "obsidian";
 
-interface WebPPasteSettings {
+interface Settings {
 	quality: number;
 }
 
-const DEFAULT_SETTINGS: WebPPasteSettings = {
-	quality: 85,
-};
+const DEFAULTS: Settings = { quality: 85 };
+
+async function toWebP(file: File, quality: number): Promise<ArrayBuffer> {
+	const bitmap = await createImageBitmap(file);
+	const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+	canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+	bitmap.close();
+	const blob = await canvas.convertToBlob({ type: "image/webp", quality: quality / 100 });
+	return blob.arrayBuffer();
+}
+
+function timestamp(): string {
+	const d = new Date();
+	return [
+		d.getFullYear(),
+		d.getMonth() + 1,
+		d.getDate(),
+		d.getHours(),
+		d.getMinutes(),
+		d.getSeconds(),
+	].map((n, i) => (i === 0 ? String(n) : String(n).padStart(2, "0"))).join("");
+}
+
+function extractPastedImage(evt: ClipboardEvent): File | null {
+	const file = evt.clipboardData?.files[0];
+	if (!file?.type.startsWith("image/") || file.type === "image/webp") return null;
+	return file;
+}
+
+async function attachmentPath(vault: any, baseName: string, ext: string, activeFile: TFile): Promise<string> {
+	if (vault.getAvailablePathForAttachments) {
+		return vault.getAvailablePathForAttachments(baseName, ext, activeFile);
+	}
+	const dir = activeFile.parent?.path ?? "";
+	return vault.getAvailablePath(dir ? `${dir}/${baseName}` : baseName, ext);
+}
 
 export default class WebPPastePlugin extends Plugin {
-	settings: WebPPasteSettings = DEFAULT_SETTINGS;
+	settings: Settings = DEFAULTS;
 
 	async onload() {
 		await this.loadSettings();
@@ -17,72 +50,24 @@ export default class WebPPastePlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.workspace.on("editor-paste", (evt: ClipboardEvent, editor: Editor, view: MarkdownView) => {
-				if (!evt.clipboardData) return;
-				const files = evt.clipboardData.files;
-				if (files.length === 0) return;
-
-				const imageFile = files[0];
-				if (!imageFile.type.startsWith("image/")) return;
-				if (imageFile.type === "image/webp") return;
-
+				const image = extractPastedImage(evt);
+				if (!image || !view.file) return;
 				evt.preventDefault();
-				this.convertAndSave(imageFile, editor, view);
-			})
+				this.handlePaste(image, editor, view.file);
+			}),
 		);
 	}
 
-	async convertAndSave(file: File, editor: Editor, view: MarkdownView) {
-		const bitmap = await createImageBitmap(file);
-		const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-		const ctx = canvas.getContext("2d")!;
-		ctx.drawImage(bitmap, 0, 0);
-		bitmap.close();
-
-		const webpBlob = await canvas.convertToBlob({
-			type: "image/webp",
-			quality: this.settings.quality / 100,
-		});
-		const arrayBuffer = await webpBlob.arrayBuffer();
-
-		const now = new Date();
-		const timestamp = now.getFullYear().toString()
-			+ String(now.getMonth() + 1).padStart(2, "0")
-			+ String(now.getDate()).padStart(2, "0")
-			+ String(now.getHours()).padStart(2, "0")
-			+ String(now.getMinutes()).padStart(2, "0")
-			+ String(now.getSeconds()).padStart(2, "0");
-		const activeFile = view.file;
-		if (!activeFile) return;
-
-		const noteName = activeFile.basename;
-		const baseName = `${noteName} ${timestamp}`;
-
-		const path = await this.getAttachmentPath(baseName, "webp", activeFile);
-		const created = await this.app.vault.createBinary(path, arrayBuffer);
-
+	private async handlePaste(image: File, editor: Editor, activeFile: TFile) {
+		const data = await toWebP(image, this.settings.quality);
+		const baseName = `${activeFile.basename} ${timestamp()}`;
+		const path = await attachmentPath(this.app.vault, baseName, "webp", activeFile);
+		const created = await this.app.vault.createBinary(path, data);
 		editor.replaceSelection(`![[${created.name}]]`);
 	}
 
-	async getAttachmentPath(baseName: string, ext: string, activeFile: TFile): Promise<string> {
-		// Use Obsidian's internal helper to respect the user's attachment folder setting
-		const folder = (this.app.vault as any).getAvailablePath
-			? undefined
-			: undefined;
-
-		// getAvailablePathForAttachments is the internal API that respects vault attachment settings
-		const internalApp = this.app as any;
-		if (internalApp.vault.getAvailablePathForAttachments) {
-			return await internalApp.vault.getAvailablePathForAttachments(baseName, ext, activeFile);
-		}
-
-		// Fallback: use getAvailablePath in the same folder as the active file
-		const dir = activeFile.parent?.path ?? "";
-		const prefix = dir ? `${dir}/${baseName}` : baseName;
-		return this.app.vault.getAvailablePath(prefix, ext);
-	}
-
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = { ...DEFAULTS, ...(await this.loadData()) };
 	}
 
 	async saveSettings() {
@@ -91,29 +76,23 @@ export default class WebPPastePlugin extends Plugin {
 }
 
 class WebPPasteSettingTab extends PluginSettingTab {
-	plugin: WebPPastePlugin;
-
-	constructor(app: App, plugin: WebPPastePlugin) {
+	constructor(app: App, private plugin: WebPPastePlugin) {
 		super(app, plugin);
-		this.plugin = plugin;
 	}
 
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-
-		new Setting(containerEl)
+	display() {
+		this.containerEl.empty();
+		new Setting(this.containerEl)
 			.setName("Image quality")
-			.setDesc("WebP compression quality (1–100). Lower values = smaller files.")
-			.addSlider((slider) =>
-				slider
-					.setLimits(1, 100, 1)
+			.setDesc("WebP compression quality (1–100). Lower = smaller files.")
+			.addSlider((s) =>
+				s.setLimits(1, 100, 1)
 					.setValue(this.plugin.settings.quality)
 					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.quality = value;
+					.onChange(async (v) => {
+						this.plugin.settings.quality = v;
 						await this.plugin.saveSettings();
-					})
+					}),
 			);
 	}
 }
