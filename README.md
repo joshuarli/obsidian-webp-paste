@@ -1,4 +1,4 @@
-# obsidian-webp-paste
+# Image Converter: WebP only
 
 Obsidian plugin that automatically converts pasted images to WebP.
 
