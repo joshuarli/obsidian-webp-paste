@@ -4,7 +4,7 @@
 	"description": "Obsidian plugin that converts pasted images to webp",
 	"scripts": {
 		"dev": "bun build src/main.ts --outfile=main.js --bundle --external=obsidian --format=cjs --target=browser --sourcemap=inline",
-		"build": "bun build src/main.ts --outfile=main.js --bundle --external=obsidian --format=cjs --target=browser --minify"
+		"build": "bun build src/main.ts --outfile=main.js --bundle --external=obsidian --format=cjs --target=browser --minify && bun run scripts/strip-cjs.ts"
 	},
 	"devDependencies": {
 		"@types/node": "^16.11.6",

@@ -16,15 +16,7 @@ async function toWebP(file: File, quality: number): Promise<ArrayBuffer> {
 }
 
 function timestamp(): string {
-	const d = new Date();
-	return [
-		d.getFullYear(),
-		d.getMonth() + 1,
-		d.getDate(),
-		d.getHours(),
-		d.getMinutes(),
-		d.getSeconds(),
-	].map((n, i) => (i === 0 ? String(n) : String(n).padStart(2, "0"))).join("");
+	return new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
 }
 
 function extractPastedImage(evt: ClipboardEvent): File | null {
@@ -83,8 +75,7 @@ class WebPPasteSettingTab extends PluginSettingTab {
 	display() {
 		this.containerEl.empty();
 		new Setting(this.containerEl)
-			.setName("Image quality")
-			.setDesc("WebP compression quality (1–100). Lower = smaller files.")
+			.setName("quality")
 			.addSlider((s) =>
 				s.setLimits(1, 100, 1)
 					.setValue(this.plugin.settings.quality)
