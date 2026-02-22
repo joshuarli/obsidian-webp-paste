@@ -1,0 +1,9 @@
+{
+	"id": "webp-paste",
+	"name": "WebP Paste",
+	"version": "0.1.0",
+	"minAppVersion": "0.15.0",
+	"description": "converts pasted images to webp.",
+	"author": "joshuarli",
+	"isDesktopOnly": true
+}
