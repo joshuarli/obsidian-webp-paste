@@ -1,15 +1,15 @@
 {
-	"name": "obsidian-webp-paste",
-	"version": "0.1.0",
-	"description": "Obsidian plugin that converts pasted images to webp",
-	"scripts": {
-		"dev": "bun build src/main.ts --outfile=main.js --bundle --external=obsidian --format=cjs --target=browser --sourcemap=inline",
-		"build": "bun build src/main.ts --outfile=main.js --bundle --external=obsidian --format=cjs --target=browser --minify && bun run scripts/strip-cjs.ts"
-	},
-	"devDependencies": {
-		"@types/node": "^16.11.6",
-		"biome": "^0.3.3",
-		"obsidian": "latest",
-		"typescript": "4.7.4"
-	}
+  "name": "obsidian-webp-paste",
+  "version": "0.1.0",
+  "description": "Obsidian plugin that converts pasted images to webp",
+  "scripts": {
+    "dev": "bun build src/main.ts --outfile=main.js --bundle --external=obsidian --format=cjs --target=browser --sourcemap=inline",
+    "build": "bun build src/main.ts --outfile=main.js --bundle --external=obsidian --format=cjs --target=browser --minify && bun run scripts/strip-cjs.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.6",
+    "biome": "^0.3.3",
+    "obsidian": "latest",
+    "typescript": "4.7.4"
+  }
 }
