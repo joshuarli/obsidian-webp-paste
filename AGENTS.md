@@ -1,14 +1,32 @@
 # obsidian-webp-paste
 
-Obsidian plugin that converts pasted images to WebP. All source code is in `src/main.ts`.
+Obsidian plugin that converts pasted images to WebP and can localize images
+from Loupe reader imports. `src/main.ts` owns the plugin runtime;
+`src/loupe-import.ts` contains the pure Loupe parsing, rewrite, hash, and path
+helpers with their tests in `test/loupe-import.test.ts`.
 
 ## How it works
 
 1. Registers an `editor-paste` event handler on plugin load.
 2. When a paste event contains an image file (png, jpeg, bmp, etc.), it calls `preventDefault()` to stop Obsidian's default paste behavior. Already-webp images are ignored and left to default handling.
 3. Converts the image to WebP using the browser-native Canvas API: `createImageBitmap` → `OffscreenCanvas` → `convertToBlob({ type: 'image/webp', quality })`.
-4. Saves the resulting ArrayBuffer to the vault via `vault.createBinary()`, using Obsidian's internal `getAvailablePathForAttachments` API to respect the user's configured attachment folder.
+4. Saves the resulting ArrayBuffer to the vault via `vault.createBinary()`, using the public `FileManager.getAvailablePathForAttachment()` API to respect the user's configured attachment folder.
 5. Inserts a markdown link at the cursor via `editor.replaceSelection()`.
+
+## Loupe imports
+
+The plugin registers `obsidian://loupe-import`. Loupe puts its Markdown on the
+system clipboard and sends only the note name, source URL, and SHA-256 digest
+in the URI. The handler verifies that digest before creating and opening the
+note, then scans only standard remote Markdown image embeds.
+
+It resolves relative image URLs against the source page, downloads them with
+Obsidian's public `requestUrl()` API, and uses the same Chromium WebP pipeline
+as image paste. Successfully localized files are written under the hardcoded,
+vault-relative `z-images/` directory and the current note contents are safely
+rewritten with `Vault.process()`. Failed image downloads or conversions leave
+their original remote embeds intact; the handler emits at most a concise
+summary Notice for partial localization.
 
 ## Settings
 

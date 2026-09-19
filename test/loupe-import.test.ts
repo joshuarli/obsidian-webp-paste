@@ -33,6 +33,11 @@ test("does not mistake ordinary links for images", () => {
   assert.equal(findLoupeImageOccurrences("!![x](https://example.com/a.jpg)").length, 1);
 });
 
+test("does not treat escaped image syntax as an image", () => {
+  assert.equal(findLoupeImageOccurrences("\\![x](https://example.com/a.jpg)").length, 0);
+  assert.equal(findLoupeImageOccurrences("\\\\![x](https://example.com/a.jpg)").length, 1);
+});
+
 test("ignores wikilink embeds", () => {
   assert.equal(findLoupeImageOccurrences("See ![[foo.webp]] here.").length, 0);
 });
@@ -175,6 +180,35 @@ test("rewrite points duplicate embeds at one local asset", () => {
   );
 });
 
+test("rewrite preserves supported syntax and non-web or local embeds", () => {
+  const markdown = [
+    '![angle](<https://example.com/a b.jpg> "title")',
+    "![escaped](https://example.com/b\\(1\\).jpg)",
+    "![[z-images/existing.webp]]",
+    "![file](file:///tmp/existing.jpg)",
+    "`![code](https://example.com/code.jpg)`",
+  ].join("\n");
+  const rewritten = applyLoupeImageLocalizations(
+    markdown,
+    SOURCE,
+    new Map([
+      ["https://example.com/a%20b.jpg", "![[z-images/Note-01.webp]]"],
+      ["https://example.com/b(1).jpg", "![[z-images/Note-02.webp]]"],
+    ]),
+  );
+
+  assert.equal(
+    rewritten,
+    [
+      "![[z-images/Note-01.webp]]",
+      "![[z-images/Note-02.webp]]",
+      "![[z-images/existing.webp]]",
+      "![file](file:///tmp/existing.jpg)",
+      "`![code](https://example.com/code.jpg)`",
+    ].join("\n"),
+  );
+});
+
 test("verifies clipboard text against the expected hash", async () => {
   const sha256 = await sha256Hex("article text");
 
@@ -281,4 +315,18 @@ test("bounded mapping preserves order", async () => {
 
   assert.deepEqual(results, [10, 20, 30, 40, 50]);
   assert.equal(seen.length, 5);
+});
+
+test("bounded mapping limits concurrent work", async () => {
+  let active = 0;
+  let maximumActive = 0;
+
+  await mapWithConcurrency([1, 2, 3, 4, 5], 2, async () => {
+    active++;
+    maximumActive = Math.max(maximumActive, active);
+    await Promise.resolve();
+    active--;
+  });
+
+  assert.equal(maximumActive, 2);
 });

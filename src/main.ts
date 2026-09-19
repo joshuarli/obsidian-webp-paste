@@ -10,7 +10,6 @@ import {
   requestUrl,
   Setting,
   type TFile,
-  type Vault,
 } from "obsidian";
 import {
   applyLoupeImageLocalizations,
@@ -32,36 +31,43 @@ interface Settings {
   quality: number;
 }
 
+interface PreparedLoupeImport {
+  clipboardText: string;
+  params: LoupeImportParams;
+}
+
 const DEFAULTS: Settings = { quality: 85 };
-
-interface AttachmentVault {
-  getAvailablePath: (path: string, ext: string) => Promise<string> | string;
-  getAvailablePathForAttachments?: (
-    baseName: string,
-    ext: string,
-    activeFile: TFile,
-  ) => Promise<string> | string;
-}
-
-function asAttachmentVault(vault: Vault): AttachmentVault {
-  return vault as unknown as AttachmentVault;
-}
 
 async function toWebP(source: Blob, quality: number): Promise<ArrayBuffer> {
   const bitmap: ImageBitmap = await createImageBitmap(source);
-  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const ctx: OffscreenCanvasRenderingContext2D | null = canvas.getContext("2d");
-  if (ctx === null) {
+  try {
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx: OffscreenCanvasRenderingContext2D | null = canvas.getContext("2d");
+    if (ctx === null) {
+      throw new Error("2d canvas context unavailable");
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    const blob: Blob = await canvas.convertToBlob({
+      quality: quality / 100,
+      type: "image/webp",
+    });
+    return await blob.arrayBuffer();
+  } finally {
     bitmap.close();
-    throw new Error("2d canvas context unavailable");
   }
-  ctx.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  const blob: Blob = await canvas.convertToBlob({
-    quality: quality / 100,
-    type: "image/webp",
-  });
-  return await blob.arrayBuffer();
+}
+
+async function isUsableWebP(source: Blob): Promise<boolean> {
+  const bitmap: ImageBitmap = await createImageBitmap(source);
+  try {
+    return bitmap.width > 0 && bitmap.height > 0;
+  } finally {
+    bitmap.close();
+  }
+}
+
+function isWebPContentType(contentType: string): boolean {
+  return contentType.split(";", 1)[0]?.trim() === "image/webp";
 }
 
 function extractPastedImage(evt: ClipboardEvent): File | null {
@@ -74,22 +80,9 @@ function extractPastedImage(evt: ClipboardEvent): File | null {
 
 const WEBP_EXTENSION = "webp";
 
-async function attachmentPath(vault: Vault, baseName: string, activeFile: TFile): Promise<string> {
-  const compat: AttachmentVault = asAttachmentVault(vault);
-  const byAttachments: AttachmentVault["getAvailablePathForAttachments"] =
-    compat.getAvailablePathForAttachments;
-  if (byAttachments !== undefined) {
-    return await byAttachments(baseName, WEBP_EXTENSION, activeFile);
-  }
-  const dir: string = activeFile.parent?.path ?? "";
-  return await compat.getAvailablePath(
-    dir === "" ? baseName : `${dir}/${baseName}`,
-    WEBP_EXTENSION,
-  );
-}
-
 export default class WebPPastePlugin extends Plugin {
   override settings: Settings = DEFAULTS;
+  private loupeImportQueue: Promise<void> = Promise.resolve();
 
   override async onload(): Promise<void> {
     await this.loadSettings();
@@ -110,14 +103,17 @@ export default class WebPPastePlugin extends Plugin {
       ),
     );
     this.registerObsidianProtocolHandler("loupe-import", (params: ObsidianProtocolData) => {
-      void this.handleLoupeImport(params);
+      this.enqueueLoupeImport(params);
     });
   }
 
   private async handlePaste(image: File, editor: Editor, activeFile: TFile): Promise<void> {
     const data: ArrayBuffer = await toWebP(image, this.settings.quality);
     const baseName = `${activeFile.basename} ${loupeImageTimestamp()}`;
-    const path: string = await attachmentPath(this.app.vault, baseName, activeFile);
+    const path: string = await this.app.fileManager.getAvailablePathForAttachment(
+      `${baseName}.${WEBP_EXTENSION}`,
+      activeFile.path,
+    );
     const created: TFile = await this.app.vault.createBinary(path, data);
     editor.replaceSelection(`![[${created.name}]]`);
   }
@@ -129,18 +125,37 @@ export default class WebPPastePlugin extends Plugin {
     new Notice(message);
   }
 
+  private enqueueLoupeImport(params: ObsidianProtocolData): void {
+    void this.prepareLoupeImport(params)
+      .then((prepared) => {
+        if (prepared === null) {
+          return;
+        }
+        this.loupeImportQueue = this.loupeImportQueue
+          .then(() => this.createLoupeNoteAndLocalize(prepared))
+          .catch((error) => {
+            this.failLoupeImport("Loupe import failed unexpectedly.", error);
+          });
+      })
+      .catch((error) => {
+        this.failLoupeImport("Loupe import could not be prepared.", error);
+      });
+  }
+
   // Companion handler for the Loupe reader extension's "Open in Obsidian"
   // button. The article Markdown travels via the clipboard; the
   // `obsidian://loupe-import` URI carries only the note name, the source page
   // URL (for resolving relative image destinations), and a SHA-256 of the
-  // exact clipboard text so stale clipboard contents are refused.
-  private async handleLoupeImport(params: ObsidianProtocolData): Promise<void> {
+  // exact clipboard text so stale or mismatched clipboard contents are refused.
+  private async prepareLoupeImport(
+    params: ObsidianProtocolData,
+  ): Promise<PreparedLoupeImport | null> {
     let loupeParams: LoupeImportParams;
     try {
       loupeParams = parseLoupeImportParams(params);
     } catch (error) {
       this.failLoupeImport("Loupe import received invalid parameters.", error);
-      return;
+      return null;
     }
 
     let clipboardText: string;
@@ -151,28 +166,43 @@ export default class WebPPastePlugin extends Plugin {
         "Loupe import could not read the clipboard. Copy the article again and retry.",
         error,
       );
-      return;
+      return null;
     }
     if (clipboardText === "") {
       this.failLoupeImport(
         "Loupe import found an empty clipboard. Copy the article again and retry.",
       );
-      return;
+      return null;
     }
-    if (!(await verifyLoupeClipboard(clipboardText, loupeParams.sha256))) {
+    let clipboardMatches: boolean;
+    try {
+      clipboardMatches = await verifyLoupeClipboard(clipboardText, loupeParams.sha256);
+    } catch (error) {
+      this.failLoupeImport(
+        "Loupe import could not verify the clipboard. Copy the article again and retry.",
+        error,
+      );
+      return null;
+    }
+    if (!clipboardMatches) {
       this.failLoupeImport(
         "Loupe import clipboard contents changed. Copy the article again and retry.",
       );
-      return;
+      return null;
     }
 
-    const activeFile = this.app.workspace.getActiveFile();
+    return { clipboardText, params: loupeParams };
+  }
+
+  private async createLoupeNoteAndLocalize(prepared: PreparedLoupeImport): Promise<void> {
+    const { clipboardText, params } = prepared,
+      activeFile = this.app.workspace.getActiveFile();
     const parent = this.app.fileManager.getNewFileParent(
       activeFile?.path ?? "",
-      `${loupeParams.file}.md`,
+      `${params.file}.md`,
     );
     const notePath = firstAvailablePath(
-      buildLoupeNotePath(parent.path, loupeParams.file),
+      buildLoupeNotePath(parent.path, params.file),
       (path) => this.app.vault.getAbstractFileByPath(path) !== null,
     );
     let note: TFile;
@@ -182,8 +212,12 @@ export default class WebPPastePlugin extends Plugin {
       this.failLoupeImport("Loupe import could not create the note.", error);
       return;
     }
-    await this.app.workspace.getLeaf(false).openFile(note);
-    await this.localizeLoupeImages(note, clipboardText, loupeParams.source);
+    try {
+      await this.app.workspace.getLeaf(false).openFile(note);
+    } catch (error) {
+      this.failLoupeImport("Loupe import created the note but could not open it.", error);
+    }
+    await this.localizeLoupeImages(note, clipboardText, params.source);
   }
 
   private async localizeLoupeImages(
@@ -196,13 +230,8 @@ export default class WebPPastePlugin extends Plugin {
       return;
     }
 
-    if (this.app.vault.getAbstractFileByPath(LOUPE_IMAGE_FOLDER) === null) {
-      try {
-        await this.app.vault.createFolder(LOUPE_IMAGE_FOLDER);
-      } catch (error) {
-        console.error("Loupe import could not create the image folder.", error);
-        return;
-      }
+    if (!(await this.ensureLoupeImageFolder())) {
+      return;
     }
 
     const takenPaths = new Set<string>();
@@ -225,16 +254,18 @@ export default class WebPPastePlugin extends Plugin {
           return null;
         }
         const created = await this.app.vault.createBinary(target.path, data);
-        return { resolvedUrl: target.resolvedUrl, embed: `![[${created.path}]]` };
+        return { resolvedUrl: target.resolvedUrl, embed: `![[${created.path}]]`, file: created };
       } catch (error) {
         console.warn(`Loupe import could not localize ${target.resolvedUrl}.`, error);
         return null;
       }
     });
 
+    const createdFiles: TFile[] = [];
     const urlToEmbed = new Map<string, string>();
     for (const download of downloads) {
       if (download !== null) {
+        createdFiles.push(download.file);
         urlToEmbed.set(download.resolvedUrl, download.embed);
       }
     }
@@ -245,6 +276,7 @@ export default class WebPPastePlugin extends Plugin {
           applyLoupeImageLocalizations(current, sourceUrl, urlToEmbed),
         );
       } catch (error) {
+        await this.cleanupLoupeImages(createdFiles);
         console.error("Loupe import downloaded images but could not update the note.", error);
         new Notice("Loupe import downloaded images but could not update the note.");
         return;
@@ -255,6 +287,37 @@ export default class WebPPastePlugin extends Plugin {
       new Notice(
         `Loupe: localized ${urlToEmbed.size} of ${remoteImages.length} images; ${remoteImages.length - urlToEmbed.size} remain external.`,
       );
+    }
+  }
+
+  private async ensureLoupeImageFolder(): Promise<boolean> {
+    if (this.app.vault.getFolderByPath(LOUPE_IMAGE_FOLDER) !== null) {
+      return true;
+    }
+    try {
+      await this.app.vault.createFolder(LOUPE_IMAGE_FOLDER);
+      return true;
+    } catch (error) {
+      // Another import can create the folder after our check. A file at this
+      // path is still an error because no asset can be written beneath it.
+      if (this.app.vault.getFolderByPath(LOUPE_IMAGE_FOLDER) !== null) {
+        return true;
+      }
+      this.failLoupeImport("Loupe import could not create the z-images folder.", error);
+      return false;
+    }
+  }
+
+  private async cleanupLoupeImages(files: readonly TFile[]): Promise<void> {
+    for (const file of files) {
+      if (this.app.vault.getAbstractFileByPath(file.path) !== file) {
+        continue;
+      }
+      try {
+        await this.app.vault.delete(file);
+      } catch (error) {
+        console.warn(`Loupe import could not remove ${file.path} after a failed rewrite.`, error);
+      }
     }
   }
 
@@ -275,11 +338,18 @@ export default class WebPPastePlugin extends Plugin {
       console.warn(`Loupe import received HTTP ${status} for ${resolvedUrl}.`);
       return null;
     }
-    if (contentType.includes("image/webp") && isWebPBytes(buffer)) {
-      return buffer;
+    const source = new Blob([buffer], { type: contentType });
+    if (isWebPContentType(contentType) && isWebPBytes(buffer)) {
+      try {
+        if (await isUsableWebP(source)) {
+          return buffer;
+        }
+      } catch (error) {
+        console.warn(`Loupe import received an invalid WebP response from ${resolvedUrl}.`, error);
+      }
     }
     try {
-      return await toWebP(new Blob([buffer]), this.settings.quality);
+      return await toWebP(source, this.settings.quality);
     } catch (error) {
       console.warn(`Loupe import could not convert ${resolvedUrl} to WebP.`, error);
       return null;

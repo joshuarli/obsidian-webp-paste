@@ -269,6 +269,14 @@ function parseImageAt(markdown: string, bangIndex: number): LoupeImageOccurrence
   };
 }
 
+function isMarkdownEscaped(markdown: string, index: number): boolean {
+  let backslashCount = 0;
+  for (let i = index - 1; i >= 0 && markdown[i] === "\\"; i--) {
+    backslashCount++;
+  }
+  return backslashCount % 2 === 1;
+}
+
 export function findLoupeImageOccurrences(markdown: string): LoupeImageOccurrence[] {
   const codeRanges = computeCodeRanges(markdown);
   const occurrences: LoupeImageOccurrence[] = [];
@@ -283,7 +291,7 @@ export function findLoupeImageOccurrences(markdown: string): LoupeImageOccurrenc
       i = code.end;
       continue;
     }
-    if (markdown[i] === "!" && markdown[i + 1] === "[") {
+    if (markdown[i] === "!" && markdown[i + 1] === "[" && !isMarkdownEscaped(markdown, i)) {
       const occurrence = parseImageAt(markdown, i);
       if (occurrence !== null) {
         if (code !== null && occurrence.end > code.start) {
