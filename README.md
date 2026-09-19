@@ -12,6 +12,11 @@ Conversion uses Electron's built-in Chromium Canvas API (`OffscreenCanvas.conver
 
 - I recommend having all attachments in a single flat folder. `Settings -> Files and links -> Default location for new attachments & Attachment folder path`
 
+`make package` creates the `webp-paste.zip` archive used by the manual GitHub
+Actions prerelease workflow. `make install-remote` downloads the newest
+non-draft prerelease archive with the GitHub CLI and installs it into the
+configured vault.
+
 ## Loupe reader imports
 
 When [Loupe](https://github.com/joshuarli/extension-loupe) opens an article in

@@ -48,5 +48,14 @@ One setting: **quality** (1–100, default 85). Exposed as a slider in the setti
 - `deno task lint` / `lint:fix` — oxlint.
 - `deno task fmt` / `fmt:check` — oxfmt write / check.
 
-`make install` builds and copies into the vault. `make release VERSION=x.y.z` bumps
-`manifest.json`/`package.json`, commits, tags, and pushes.
+- `make install` builds and copies into the vault.
+- `make package` builds and creates `webp-paste.zip` with the two files required
+  by `make install`.
+- `make install-remote` downloads the newest non-draft GitHub prerelease archive
+  with `gh` and installs it into the configured vault.
+- `make release VERSION=x.y.z` bumps `manifest.json`/`package.json`, commits,
+  tags, and pushes.
+
+The GitHub Actions workflow is `workflow_dispatch`-only. It runs on the
+`macos-26` arm64 runner, builds `webp-paste.zip`, uploads that archive as the
+only Actions artifact, and publishes it as a GitHub prerelease asset.

@@ -1,0 +1,35 @@
+name: Build prerelease
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno install --frozen
+      - name: Build plugin archive
+        run: make package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webp-paste
+          path: webp-paste.zip
+          if-no-files-found: error
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: prerelease-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes "Built from $GITHUB_SHA." \
+            --prerelease \
+            webp-paste.zip
