@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "node"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error",
+    "perf": "error",
+    "style": "error"
+  },
+  "rules": {
+    // One declaration per const keeps diffs small and readable.
+    "eslint/one-var": "off",
+    // Hoisted top-level function declarations read top-down; no need for arrow consts.
+    "eslint/func-style": "off",
+    // Small ternaries (sourcemap toggle, path join) are clearer than if/else ladders.
+    "eslint/no-ternary": "off",
+    // Flags canvas coordinates, array indices, and self-documenting slider bounds.
+    "eslint/no-magic-numbers": "off",
+    // The Obsidian API is null-based (e.g. `TFile | null`); returning null is correct interop.
+    "unicorn/no-null": "off",
+    // Obsidian requires `export default` on the plugin class, which sits above its setting tab.
+    "import/exports-last": "off",
+    // Inline `type` specifiers keep the single obsidian import on one line;
+    // they are fully sound under `verbatimModuleSyntax`.
+    "import/consistent-type-specifier-style": "off",
+    // A plugin and its single setting tab belong in one file (Obsidian sample-plugin convention).
+    "eslint/max-classes-per-file": "off"
+  },
+  "env": {
+    "builtin": true
+  }
+}

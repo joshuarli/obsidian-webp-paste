@@ -13,13 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check
+        run: |
+          deno task check
+          deno task lint
+          deno task fmt:check
 
       - name: Build plugin
-        run: |
-          bun install
-          bun run build
+        run: deno task build
 
       - name: Create release
         env:

@@ -14,6 +14,20 @@ Obsidian plugin that converts pasted images to WebP. All source code is in `src/
 
 One setting: **quality** (1–100, default 85). Exposed as a slider in the settings tab. Persisted via `loadData()`/`saveData()`.
 
-## Building
+## Tooling
 
-`bun run build` bundles `src/main.ts` → `main.js`. `just install` builds and copies into the vault.
+- Runtime/build: Deno 2 (`deno.json` tasks). TypeScript 7.0.x with strictest `compilerOptions` (mirrored in `deno.json` and `tsconfig.json`).
+- Lint: oxlint (`.oxlintrc.json`, all categories denied).
+- Format: oxfmt (`.oxfmtrc.json`).
+- Bundler: esbuild via `scripts/build.ts` (`src/main.ts` → `main.js`, CJS, `obsidian` external).
+- Supply chain: `minimumDependencyAge` is `0` (Deno 2.9+ defaults to a 24h hold, which blocks fast-moving `@types/*` releases).
+
+## Tasks
+
+- `deno task build` — bundle `src/main.ts` → `main.js` (minified).
+- `deno task dev` — bundle with inline sourcemap and watch.
+- `deno task check` — `deno check` + `tsc --noEmit`.
+- `deno task lint` / `lint:fix` — oxlint.
+- `deno task fmt` / `fmt:check` — oxfmt write / check.
+
+`just install` builds and copies into the vault.

@@ -1,10 +1,24 @@
 {
+  "minimumDependencyAge": 0,
+  "tasks": {
+    "build": "deno run --allow-read --allow-write --allow-env --allow-run --allow-net scripts/build.ts",
+    "dev": "deno run --allow-read --allow-write --allow-env --allow-run --allow-net scripts/build.ts --watch",
+    "check": "deno check src/main.ts scripts/build.ts && tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check"
+  },
+  "imports": {
+    "obsidian": "npm:obsidian@1.13.1",
+    "esbuild": "npm:esbuild@0.28.2"
+  },
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "moduleDetection": "force",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "deno.ns"],
     "strict": true,
     "noImplicitAny": true,
     "noImplicitThis": true,
@@ -34,6 +48,5 @@
     "noUncheckedSideEffectImports": true,
     "skipLibCheck": true,
     "noEmit": true
-  },
-  "include": ["src/**/*.ts"]
+  }
 }
