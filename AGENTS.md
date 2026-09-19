@@ -30,4 +30,5 @@ One setting: **quality** (1–100, default 85). Exposed as a slider in the setti
 - `deno task lint` / `lint:fix` — oxlint.
 - `deno task fmt` / `fmt:check` — oxfmt write / check.
 
-`just install` builds and copies into the vault.
+`make install` builds and copies into the vault. `make release VERSION=x.y.z` bumps
+`manifest.json`/`package.json`, commits, tags, and pushes.
