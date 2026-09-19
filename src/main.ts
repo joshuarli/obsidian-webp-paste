@@ -247,19 +247,39 @@ export default class WebPPastePlugin extends Plugin {
       return { resolvedUrl: image.resolvedUrl, path };
     });
 
-    const downloads = await mapWithConcurrency(targets, 4, async (target) => {
-      try {
-        const data = await this.downloadLoupeImage(target.resolvedUrl);
-        if (data === null) {
-          return null;
+    const progressNotice = new Notice(
+      `Loupe: importing images (0/${targets.length})…`,
+      0,
+    );
+    let downloads: Array<{
+      resolvedUrl: string;
+      embed: string;
+      file: TFile;
+    } | null>;
+    try {
+      downloads = await mapWithConcurrency(
+        targets,
+        4,
+        async (target) => {
+          try {
+            const data = await this.downloadLoupeImage(target.resolvedUrl);
+            if (data === null) {
+              return null;
+            }
+            const created = await this.app.vault.createBinary(target.path, data);
+            return { resolvedUrl: target.resolvedUrl, embed: `![[${created.path}]]`, file: created };
+          } catch (error) {
+            console.warn(`Loupe import could not localize ${target.resolvedUrl}.`, error);
+            return null;
+          }
+        },
+        (completed) => {
+          progressNotice.setMessage(`Loupe: importing images (${completed}/${targets.length})…`);
         }
-        const created = await this.app.vault.createBinary(target.path, data);
-        return { resolvedUrl: target.resolvedUrl, embed: `![[${created.path}]]`, file: created };
-      } catch (error) {
-        console.warn(`Loupe import could not localize ${target.resolvedUrl}.`, error);
-        return null;
-      }
-    });
+      );
+    } finally {
+      progressNotice.hide();
+    }
 
     const createdFiles: TFile[] = [];
     const urlToEmbed = new Map<string, string>();

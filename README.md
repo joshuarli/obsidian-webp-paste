@@ -19,4 +19,5 @@ Obsidian, this plugin verifies Loupe's SHA-256-protected clipboard import,
 creates the note, and localizes successfully downloaded remote images as WebP
 files in the vault-relative `z-images/` folder. Relative image URLs and
 duplicate URLs are handled; individual failures remain as their original
-remote Markdown images.
+remote Markdown images. An updating Notice reports image-localization progress
+while the import is running.

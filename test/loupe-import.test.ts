@@ -330,3 +330,13 @@ test("bounded mapping limits concurrent work", async () => {
 
   assert.equal(maximumActive, 2);
 });
+
+test("bounded mapping reports each completed item", async () => {
+  const progress: number[] = [];
+
+  await mapWithConcurrency([1, 2, 3], 2, async (item) => item * 10, (completed) => {
+    progress.push(completed);
+  });
+
+  assert.deepEqual(progress, [1, 2, 3]);
+});

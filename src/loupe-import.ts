@@ -488,14 +488,17 @@ export function isWebPBytes(buffer: ArrayBuffer): boolean {
 
 // Bounded worker pool that preserves input order in its results, so filename
 // assignment stays in deterministic source order while downloads run
-// concurrently.
+// concurrently. The optional callback runs after each task resolves, in
+// completion order.
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,
   task: (item: T, index: number) => Promise<R>,
+  onItemComplete?: (completed: number) => void,
 ): Promise<R[]> {
   const results: R[] = [];
   let nextIndex = 0;
+  let completed = 0;
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
     while (nextIndex < items.length) {
       const index = nextIndex;
@@ -505,6 +508,8 @@ export async function mapWithConcurrency<T, R>(
         continue;
       }
       results[index] = await task(item, index);
+      completed += 1;
+      onItemComplete?.(completed);
     }
   });
   await Promise.all(workers);
