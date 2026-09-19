@@ -5,14 +5,18 @@ import {
   buildLoupeImagePath,
   buildLoupeNotePath,
   collectLoupeRemoteImages,
+  createLoupeImageRequest,
   findLoupeImageOccurrences,
   firstAvailablePath,
   isWebPBytes,
+  isRetryableLoupeImageStatus,
+  LOUPE_IMAGE_USER_AGENT,
   loupeImageTimestamp,
   mapWithConcurrency,
   parseLoupeImportParams,
   readResponseContentType,
   resolveLoupeImageUrl,
+  retryWithExponentialBackoff,
   sanitizeLoupeBasename,
   sha256Hex,
   verifyLoupeClipboard,
@@ -306,6 +310,77 @@ test("recognizes WebP magic bytes", () => {
   assert.equal(isWebPBytes(new Uint8Array([1, 2, 3]).buffer), false);
 });
 
+test("builds image requests with browser-like headers", () => {
+  assert.deepEqual(createLoupeImageRequest("https://example.com/photo.jpg"), {
+    url: "https://example.com/photo.jpg",
+    method: "GET",
+    headers: {
+      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "User-Agent": LOUPE_IMAGE_USER_AGENT,
+    },
+    throw: false,
+  });
+});
+
+test("identifies transient image response statuses", () => {
+  for (const status of [408, 425, 429, 500, 503, 599]) {
+    assert.equal(isRetryableLoupeImageStatus(status), true, String(status));
+  }
+  for (const status of [200, 301, 400, 401, 403, 404, 600]) {
+    assert.equal(isRetryableLoupeImageStatus(status), false, String(status));
+  }
+});
+
+test("retries transient results with exponential delays", async () => {
+  let attempts = 0;
+  const delays: number[] = [];
+  const result = await retryWithExponentialBackoff(
+    async () => {
+      attempts++;
+      return attempts < 3 ? 503 : 200;
+    },
+    (status) => isRetryableLoupeImageStatus(status),
+    {
+      attempts: 4,
+      initialDelayMs: 25,
+      maxDelayMs: 100,
+      sleep: async (delayMs) => {
+        delays.push(delayMs);
+      },
+    },
+  );
+
+  assert.equal(result, 200);
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [25, 50]);
+});
+
+test("retries thrown operations and rethrows the final error", async () => {
+  let attempts = 0;
+  const delays: number[] = [];
+  await assert.rejects(
+    retryWithExponentialBackoff(
+      async () => {
+        attempts++;
+        throw new Error("offline");
+      },
+      () => false,
+      {
+        attempts: 3,
+        initialDelayMs: 10,
+        maxDelayMs: 100,
+        sleep: async (delayMs) => {
+          delays.push(delayMs);
+        },
+      },
+    ),
+    /offline/,
+  );
+
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [10, 20]);
+});
+
 test("bounded mapping preserves order", async () => {
   const seen: number[] = [];
   const results = await mapWithConcurrency([1, 2, 3, 4, 5], 2, async (item) => {
@@ -339,4 +414,18 @@ test("bounded mapping reports each completed item", async () => {
   });
 
   assert.deepEqual(progress, [1, 2, 3]);
+});
+
+test("bounded mapping can run every item concurrently", async () => {
+  let active = 0;
+  let maximumActive = 0;
+
+  await mapWithConcurrency([1, 2, 3], 3, async () => {
+    active++;
+    maximumActive = Math.max(maximumActive, active);
+    await Promise.resolve();
+    active--;
+  });
+
+  assert.equal(maximumActive, 3);
 });

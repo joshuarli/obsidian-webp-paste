@@ -16,13 +16,16 @@ import {
   buildLoupeImagePath,
   buildLoupeNotePath,
   collectLoupeRemoteImages,
+  createLoupeImageRequest,
   firstAvailablePath,
+  isRetryableLoupeImageStatus,
   isWebPBytes,
   LOUPE_IMAGE_FOLDER,
   loupeImageTimestamp,
   mapWithConcurrency,
   parseLoupeImportParams,
   readResponseContentType,
+  retryWithExponentialBackoff,
   type LoupeImportParams,
   verifyLoupeClipboard,
 } from "./loupe-import.ts";
@@ -36,7 +39,18 @@ interface PreparedLoupeImport {
   params: LoupeImportParams;
 }
 
+interface LocalizedLoupeImage {
+  resolvedUrl: string;
+  embed: string;
+  file: TFile;
+}
+
 const DEFAULTS: Settings = { quality: 85 };
+const IMAGE_REQUEST_RETRY_OPTIONS = {
+  attempts: 3,
+  initialDelayMs: 250,
+  maxDelayMs: 2_000,
+} as const;
 
 async function toWebP(source: Blob, quality: number): Promise<ArrayBuffer> {
   const bitmap: ImageBitmap = await createImageBitmap(source);
@@ -251,15 +265,11 @@ export default class WebPPastePlugin extends Plugin {
       `Loupe: importing images (0/${targets.length})…`,
       0,
     );
-    let downloads: Array<{
-      resolvedUrl: string;
-      embed: string;
-      file: TFile;
-    } | null>;
+    let downloads: Array<LocalizedLoupeImage | null>;
     try {
       downloads = await mapWithConcurrency(
         targets,
-        4,
+        targets.length,
         async (target) => {
           try {
             const data = await this.downloadLoupeImage(target.resolvedUrl);
@@ -346,7 +356,11 @@ export default class WebPPastePlugin extends Plugin {
     let buffer: ArrayBuffer;
     let contentType: string;
     try {
-      const response = await requestUrl({ url: resolvedUrl, method: "GET", throw: false });
+      const response = await retryWithExponentialBackoff(
+        () => requestUrl(createLoupeImageRequest(resolvedUrl)),
+        (candidate) => isRetryableLoupeImageStatus(candidate.status),
+        IMAGE_REQUEST_RETRY_OPTIONS,
+      );
       status = response.status;
       buffer = response.arrayBuffer;
       contentType = readResponseContentType(response.headers);

@@ -486,6 +486,68 @@ export function isWebPBytes(buffer: ArrayBuffer): boolean {
   );
 }
 
+export const LOUPE_IMAGE_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+
+export function createLoupeImageRequest(url: string): {
+  url: string;
+  method: "GET";
+  headers: Record<string, string>;
+  throw: false;
+} {
+  return {
+    url,
+    method: "GET",
+    headers: {
+      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "User-Agent": LOUPE_IMAGE_USER_AGENT,
+    },
+    throw: false,
+  };
+}
+
+export function isRetryableLoupeImageStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+}
+
+export interface ExponentialBackoffOptions {
+  attempts: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+  sleep?: (delayMs: number) => Promise<void>;
+}
+
+// Retries network errors and result values selected by the caller. The
+// injectable sleep function keeps backoff timing deterministic in tests.
+export async function retryWithExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  shouldRetryResult: (result: T) => boolean,
+  options: ExponentialBackoffOptions,
+): Promise<T> {
+  const attempts = Math.max(1, Math.floor(options.attempts)),
+    sleep =
+      options.sleep ??
+      ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const result = await operation();
+      if (attempt === attempts - 1 || !shouldRetryResult(result)) {
+        return result;
+      }
+    } catch (error) {
+      if (attempt === attempts - 1) {
+        throw error;
+      }
+    }
+
+    const delayMs = Math.min(options.maxDelayMs, options.initialDelayMs * 2 ** attempt);
+    await sleep(delayMs);
+  }
+
+  throw new Error("Retry operation did not produce a result.");
+}
+
 // Bounded worker pool that preserves input order in its results, so filename
 // assignment stays in deterministic source order while downloads run
 // concurrently. The optional callback runs after each task resolves, in
